@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from motion.object import Object
 from motion.point import Point
@@ -74,60 +75,68 @@ class Tracker:
         for i in loose_points_idx:
             self.loose_points.append(point_objects[i])
 
+        live_objects = []
+
         # Then, match the detected objects
         # Mark non-person objects as used
-        used_objects = [detected_objects['class_ids'][i] != 1 or detected_objects['scores'][i] < 0.8 for i in range(len(detected_objects['class_ids']))]
+        objects_to_match = [i for i in range(len(detected_objects['class_ids'])) if
+                            detected_objects['class_ids'][i] == 1]
+        otm_masks = np.take(detected_objects['masks'], objects_to_match, 2)
+        otm_rois = np.take(detected_objects['rois'], objects_to_match, 0)
 
-        live_objects = []
-        for obj in self.objects:  # type: Object
-            candidate = None
-            live = False
+        # cost from paths
+        cost = np.zeros((len(self.objects), len(objects_to_match)))
+        for x in range(len(self.objects)):
+            for pt in self.objects[x].points:
+                if pt.p is None:
+                    continue
+                for y in np.argwhere(otm_masks[pt.p[1], pt.p[0]]):
+                    cost[x, y] += 1
+        cost = 1 / np.log2(cost + 2) * 0.75
 
-            if obj.points:
-                candidate_objects = []
-                for pt in obj.points:  # type: Point
-                    if pt.p is not None:
-                        live = True
-                        for i in np.argwhere(detected_objects['masks'][pt.p[1], pt.p[0]]):
-                            if not used_objects[i[0]]:
-                                candidate_objects.append(i[0])
-                if len(candidate_objects) > 3 * len(set(candidate_objects)):
-                    candidate = max(set(candidate_objects), key=candidate_objects.count)
+        for x in range(len(self.objects)):
+            for y in range(len(objects_to_match)):
+                obj = self.objects[x].roi  # type: list
+                otm = otm_rois[y]
+                overlap = max(0, min(obj[2], otm[2]) -
+                              max(obj[0], otm[0])) * \
+                          max(0, min(obj[3], otm[3]) -
+                              max(obj[1], otm[1]))
+                cost[x, y] += 0.25 * (1 - (overlap / (((obj[3] - obj[1]) * (obj[2] - obj[0]))
+                                                      + ((otm[3] - otm[1]) * (otm[2] - otm[0])) - overlap)))
 
-            if candidate is None and obj.roi_valid:
-                # rois in shape y,x,y,x
-                bottom_left = obj.roi[:2] + self.layers[-1].estimate_delta(obj.roi[:2][::-1])[::-1]
-                top_right = obj.roi[2:] + self.layers[-1].estimate_delta(obj.roi[2:][::-1])[::-1]
-                candidate_overlap = 0
-                for i in range(len(detected_objects['class_ids'])):
-                    overlap = max(0, min(detected_objects['rois'][i, 2], top_right[0]) -
-                                  max(detected_objects['rois'][i, 0], bottom_left[0])) * \
-                              max(0, min(detected_objects['rois'][i, 3], top_right[1]) -
-                                  max(detected_objects['rois'][i, 1], bottom_left[1]))
-                    if overlap > candidate_overlap and not used_objects[i]:
-                        candidate = i
-                        candidate_overlap = overlap
+        # filter out tracked objects without candidate
+        cost_rows = []
 
-            if candidate is not None:
-                live_objects.append(obj)
-                obj.add_match(detected_objects['rois'][candidate],
-                              [point_objects[p] for p in mask_points[candidate]],
-                              self.frame_no)
-                used_objects[candidate] = True
-                self.file.write(obj.describe(self.frame_no))
-            elif live:
-                obj.predict_roi(self.frame_no)
-                # self.file.write(obj.describe(self.frame_no))
-                live_objects.append(obj)
+        for x in range(len(self.objects)):
+            obj_t = self.objects[x]
+            if sum(cost[x]) < len(objects_to_match):
+                cost_rows.append(x)
+            else:
+                if any(pt for pt in self.objects[x].points):
+                    obj_t.predict_roi(self.frame_no)
+                    live_objects.append(obj_t)
+
+        col_ind = []
+
+        if cost_rows:
+            cost = np.take(cost, cost_rows,0)
+            row_ind, col_ind = linear_sum_assignment(cost)
+            for obj_idx, obj_candidate in zip(row_ind, col_ind):
+                obj_t = self.objects[cost_rows[obj_idx]]
+                obj_t.add_match(otm_rois[obj_candidate],
+                                [point_objects[p] for p in mask_points[objects_to_match[obj_candidate]]],
+                                self.frame_no)
+                live_objects.append(obj_t)
+                self.file.write(obj_t.describe(self.frame_no))
+
+        for new_object_id in set(range(len(objects_to_match)))-set(col_ind):
+            obj_t = Object(otm_rois[new_object_id],
+                         [point_objects[p] for p in mask_points[objects_to_match[new_object_id]]],
+                         self.frame_no)
+            live_objects.append(obj_t)
+            self.file.write(obj_t.describe(self.frame_no))
 
         self.objects = live_objects
-
-        for i in range(len(detected_objects['class_ids'])):
-            if not used_objects[i]:
-                obj = Object(detected_objects['rois'][i],
-                             [point_objects[p] for p in mask_points[i]],
-                             self.frame_no)
-                self.objects.append(obj)
-                self.file.write(obj.describe(self.frame_no))
 
         self.frame_no += 1

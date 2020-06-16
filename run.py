@@ -53,7 +53,7 @@ def __check_model(path):
     if os.path.basename(path) != DEFAULT_COCO_MODEL:
         raise FileNotFoundError('Unknown model, please download manually...')
 
-    download_trained_weights(path)
+    #download_trained_weights(path)
 
 
 def run():
