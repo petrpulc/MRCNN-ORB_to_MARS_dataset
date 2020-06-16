@@ -76,7 +76,7 @@ class Tracker:
 
         # Then, match the detected objects
         # Mark non-person objects as used
-        used_objects = [class_id != 1 for class_id in detected_objects['class_ids']]
+        used_objects = [detected_objects['class_ids'][i] != 1 or detected_objects['scores'][i] < 0.8 for i in range(len(detected_objects['class_ids']))]
 
         live_objects = []
         for obj in self.objects:  # type: Object
