@@ -34,7 +34,7 @@ def __parse_args():
     parser.add_argument('--output', '-o', default='result')
     parser.add_argument('--images', action='store_true')
     parser.add_argument('--orb_points', type=int, default=5000)
-    parser.add_argument('--fast_threshold', type=float, default=50)
+    parser.add_argument('--fast_threshold', type=int, default=50)
     parser.add_argument('--orb_octaves', type=int, default=3)
     return parser.parse_args()
 
