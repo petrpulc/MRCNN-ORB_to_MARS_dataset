@@ -35,6 +35,7 @@ def __parse_args():
     parser.add_argument('--images', action='store_true')
     parser.add_argument('--orb_points', type=int, default=5000)
     parser.add_argument('--fast_threshold', type=int, default=50)
+    # TODO: calculate default from resolution
     parser.add_argument('--orb_octaves', type=int, default=3)
     return parser.parse_args()
 
@@ -92,15 +93,22 @@ def run():
 
     # Process files
     for f in files:
+        # - load frame, convert from BGR to RGB
         frame = cv2.imread(f)[:, :, ::-1]
-        cpu_gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        pts, desc = orb.detectAndCompute(cpu_gray, None)
-#        r = model.detect([frame])[0]
+        # - convert to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        # - detect and compute ORB PoIs with settings from `orb`
+        pts, desc = orb.detectAndCompute(gray, None)
+        # - run detection with MaskR-CNN on full color frame
+        # r = model.detect([frame])[0]
+        # - alternatively, load precomputed MaskR-CNN detections
         r = pickle.load(bz2.open(f.split('.')[0]+'.p.bz2', 'rb'))
+        # - add frame (detections) to tracker
         t.add_frame(pts, desc, r)
+        # save image representations if required with --images argument
         if args.images:
-            plot_mrcnn(cpu_gray, r, t, args.output)
-            plot_image(cpu_gray, t, args.output)
+            plot_mrcnn(gray, r, t, args.output)
+            plot_image(gray, t, args.output)
 
 
 if __name__ == '__main__':
