@@ -71,7 +71,7 @@ def plot_image(image, tracker, path=''):
                     color='w', size=11, backgroundcolor="none")
         t.set_bbox({'facecolor': obj.color, 'alpha': 0.2, 'pad': 0, 'edgecolor': obj.color})
 
-    plt.pyplot.savefig(os.path.join(path, 'rois', '{:06}.pdf'.format(tracker.frame_no)))
+    #plt.pyplot.savefig(os.path.join(path, 'rois', '{:06}.pdf'.format(tracker.frame_no)))
 
     for obj in tracker.objects:
         for point in obj.points:

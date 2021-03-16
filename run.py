@@ -72,6 +72,9 @@ def run():
             full_path = os.path.join(args.output, sub)
             if not os.path.exists(full_path):
                 os.mkdir(full_path)
+    obj_path = os.path.join(args.output, 'objects')
+    if not os.path.exists(obj_path):
+        os.mkdir(obj_path)
 
     # Get list of frames
     files = list(sorted(glob.glob(os.path.join(args.path, args.file_mask))))
@@ -104,11 +107,27 @@ def run():
         # - alternatively, load precomputed MaskR-CNN detections
         r = pickle.load(bz2.open(f.split('.')[0] + '.p.bz2', 'rb'))
         # - add frame (detections) to tracker
-        t.add_frame(pts, desc, r)
+        do2oid = t.add_frame(pts, desc, r)
         # save image representations if required with --images argument
         if args.images:
-            plot_mrcnn(gray, r, t, args.output)
+            # plot_mrcnn(gray, r, t, args.output)
             plot_image(gray, t, args.output)
+        for detected_object, object_id in enumerate(do2oid):
+            if object_id is None:
+                continue
+            bgra = cv2.cvtColor(frame, cv2.COLOR_RGB2BGRA)
+            bgra[:, :, 3] = r['masks'][:, :, detected_object] * 255
+
+            roi = r['rois'][detected_object]
+            size = int(max(roi[2] - roi[0], roi[3] - roi[1]) / 2)
+            centroid = (int((roi[0] + roi[2]) / 2), int((roi[1] + roi[3]) / 2))
+            patch = bgra[centroid[0] - size:centroid[0] + size, centroid[1] - size:centroid[1] + size]
+            patch = cv2.resize(patch, (50, 50), interpolation=cv2.INTER_AREA)
+
+            path = os.path.join(obj_path, str(object_id))
+            if not os.path.exists(path):
+                os.mkdir(path)
+            cv2.imwrite(os.path.join(path, f'{t.frame_no}.png'), patch)
 
 
 if __name__ == '__main__':

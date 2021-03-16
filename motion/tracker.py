@@ -34,8 +34,6 @@ class Tracker:
         self.frame_no = 0
         self.frame_width = frame_width
 
-        self.loose_points = []
-
         self.file = open(os.path.join(sequence_name, 'det.txt'), 'w')
 
     def __del__(self):
@@ -93,11 +91,6 @@ class Tracker:
             s, e = octave_boundaries[i:i + 2]
             point_objects[s:e] = self.layers[i].add_frame(points[s:e], descriptors[s:e], self.layers[i + 1])
 
-        # Clear the list of loose points (not belonging to any object) from previous frame and fill with new list.
-        self.loose_points = []
-        for i in loose_points_idx:
-            self.loose_points.append(point_objects[i])
-
         # Prepare a list of objects that are still live after introducing current frame
         live_objects = []
 
@@ -119,37 +112,23 @@ class Tracker:
                 for object_to_match in np.argwhere(otm_masks[pt.p[1], pt.p[0]]):
                     cost[existing_object, object_to_match] += 1
         # -- and normalize the number to a weight
-        cost = 1 / np.log2(cost + 2) * 0.75
-
-        # - add weight computed from RoI overlap
-        # -- for each tracked object from last frame:
-        for existing_object in range(len(self.objects)):
-            # --- compute the overlap (intersection over union) with new detected object RoIs
-            for object_to_match in range(len(objects_to_match)):
-                obj = self.objects[existing_object].roi  # type: list
-                otm = otm_rois[object_to_match]
-                # TODO: transform RoIs with history of motion / layer estimation / homography
-                overlap = max(0, min(obj[2], otm[2]) -
-                              max(obj[0], otm[0])) * \
-                          max(0, min(obj[3], otm[3]) -
-                              max(obj[1], otm[1]))
-                cost[existing_object, object_to_match] += 0.25 * (
-                        1 - (overlap / (((obj[3] - obj[1]) * (obj[2] - obj[0]))
-                                        + ((otm[3] - otm[1]) * (otm[2] - otm[0])) - overlap)))
+        cost = 1 / np.log2(cost + 2)
 
         # - filter out tracked objects without candidate
         cost_row_ind = []  # row indexes to be considered in cost minimisation later
         for existing_object in range(len(self.objects)):
-            obj_t = self.objects[existing_object]
+            # obj_t = self.objects[existing_object]
             if sum(cost[existing_object]) < len(objects_to_match):
                 # the cost is not maximal, therefore there is a possibility of match
                 cost_row_ind.append(existing_object)
-            else:
-                # the existing object was not detected in new frame,
-                # but we might still track it just with the tracked points
-                if any(pt for pt in self.objects[existing_object].points):
-                    obj_t.predict_roi(self.frame_no)
-                    live_objects.append(obj_t)
+            # else:
+            #     # the existing object was not detected in new frame,
+            #     # but we might still track it just with the tracked points
+            #     if any(pt for pt in self.objects[existing_object].points):
+            #         obj_t.predict_roi(self.frame_no)
+            #         live_objects.append(obj_t)
+
+        detected_object_to_global_object_id = [None] * len(detected_objects['class_ids'])
 
         # - find the minimal mapping
         objects_with_no_match = set(range(len(objects_to_match)))
@@ -167,6 +146,7 @@ class Tracker:
                                 self.frame_no)
                 live_objects.append(obj_t)
                 self.file.write(obj_t.describe(self.frame_no))
+                detected_object_to_global_object_id[objects_to_match[obj_candidate]] = obj_t.id
                 objects_with_no_match.remove(obj_candidate)
 
         # Add objects that had no match as new ones to be tracked in future
@@ -176,8 +156,11 @@ class Tracker:
                            self.frame_no)
             live_objects.append(obj_t)
             self.file.write(obj_t.describe(self.frame_no))
+            detected_object_to_global_object_id[objects_to_match[new_object_id]] = obj_t.id
 
         # Store current set of live objects as the ones to be considered for tacking in next frame
         self.objects = live_objects
 
         self.frame_no += 1
+
+        return detected_object_to_global_object_id
