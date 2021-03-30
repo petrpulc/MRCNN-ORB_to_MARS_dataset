@@ -152,20 +152,25 @@ class Tracker:
                     live_objects.append(obj_t)
 
         # - find the minimal mapping
-        col_ind = []
+        objects_with_no_match = set(range(len(objects_to_match)))
         if cost_row_ind:
             cost = np.take(cost, cost_row_ind, 0)
-            row_ind, col_ind = linear_sum_assignment(cost)
-            for obj_idx, obj_candidate in zip(row_ind, col_ind):
+            for obj_idx, obj_candidate in zip(*linear_sum_assignment(cost)):
+                # if cost is 1, no real match happened and we have to ignore it
+                if cost[obj_idx, obj_candidate] == 1:
+                    continue
+
                 obj_t = self.objects[cost_row_ind[obj_idx]]
+
                 obj_t.add_match(otm_rois[obj_candidate],
                                 [point_objects[p] for p in mask_points[objects_to_match[obj_candidate]]],
                                 self.frame_no)
                 live_objects.append(obj_t)
                 self.file.write(obj_t.describe(self.frame_no))
+                objects_with_no_match.remove(obj_candidate)
 
         # Add objects that had no match as new ones to be tracked in future
-        for new_object_id in set(range(len(objects_to_match))) - set(col_ind):
+        for new_object_id in objects_with_no_match:
             obj_t = Object(otm_rois[new_object_id],
                            [point_objects[p] for p in mask_points[objects_to_match[new_object_id]]],
                            self.frame_no)
