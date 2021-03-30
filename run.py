@@ -6,14 +6,15 @@ Mask R-CNN + ORB tracker entry point.
 
 import argparse
 import glob
+import math
 import os
 
 import cv2
 
-# import mrcnn.model as modellib
+import mrcnn.model as modellib
 from motion.tracker import Tracker
-# from mrcnn.config import CocoConfig
-# from mrcnn.utils import download_trained_weights
+from mrcnn.config import CocoConfig
+from mrcnn.utils import download_trained_weights
 from plot import plot_mrcnn, plot_image
 import pickle, bz2
 
@@ -34,9 +35,9 @@ def __parse_args():
     parser.add_argument('--output', '-o', default='result')
     parser.add_argument('--images', action='store_true')
     parser.add_argument('--orb_points', type=int, default=5000)
+    parser.add_argument('--orb_scale_factor', type=int, default=2)
     parser.add_argument('--fast_threshold', type=int, default=50)
-    # TODO: calculate default from resolution
-    parser.add_argument('--orb_octaves', type=int, default=3)
+    parser.add_argument('--orb_octaves', type=int)
     return parser.parse_args()
 
 
@@ -54,7 +55,7 @@ def __check_model(path):
     if os.path.basename(path) != DEFAULT_COCO_MODEL:
         raise FileNotFoundError('Unknown model, please download manually...')
 
-    # download_trained_weights(path)
+    download_trained_weights(path)
 
 
 def run():
@@ -87,9 +88,15 @@ def run():
     # model.load_weights(args.mrcnn_model, by_name=True)
 
     # model.detect([frame])
+    # Compute number of octaves based on frame size and scale factor
+    if not args.orb_octaves:
+        args.orb_octaves = max(math.ceil(math.log(frame.shape[1] / 135, args.orb_scale_factor)), 1)
 
     # Create ORB detector
-    orb = cv2.ORB.create(args.orb_points, 2, args.orb_octaves, 31, 0, 2, cv2.ORB_HARRIS_SCORE, 31, args.fast_threshold)
+    orb = cv2.ORB.create(args.orb_points,
+                         args.orb_scale_factor, args.orb_octaves,
+                         31, 0, 2, cv2.ORB_HARRIS_SCORE,
+                         31, args.fast_threshold)
 
     # Initialize tracker
     t = Tracker(args.orb_octaves, frame.shape[1], args.output)
