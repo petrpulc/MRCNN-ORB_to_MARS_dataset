@@ -84,7 +84,7 @@ class Tracker:
             set(range(octave_boundaries[-2], octave_boundaries[-1])).intersection(loose_points_idx))
         self.layers[-1].add_frame(np.take(points, homography_points, 0), np.take(descriptors, homography_points, 0))
 
-        # Prepare an array that will hold relation of newly detected point to esiting Point object
+        # Prepare an array that will hold relation of newly detected point to existing Point object
         point_objects = [None] * len(points)
 
         # Go from the highest layer (smallest resolution) down to full resolution

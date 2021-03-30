@@ -125,6 +125,7 @@ class HomographyLayer:
     Motion prediction layer that registers points of interest to a homography.
     Used as a top-most layer for crude model of camera motion.
     """
+
     def __init__(self, tracker):
         """
         Initialize empty homography registration.

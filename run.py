@@ -54,7 +54,7 @@ def __check_model(path):
     if os.path.basename(path) != DEFAULT_COCO_MODEL:
         raise FileNotFoundError('Unknown model, please download manually...')
 
-    #download_trained_weights(path)
+    # download_trained_weights(path)
 
 
 def run():
@@ -66,7 +66,7 @@ def run():
 
     # Prepare output structure
     if not os.path.exists(args.output):
-        os.mkdir(args.output)
+        os.makedirs(args.output, exist_ok=True)
     if args.images:
         for sub in ('mrcnn', 'rois', 'full'):
             full_path = os.path.join(args.output, sub)
@@ -80,10 +80,10 @@ def run():
     frame = cv2.imread(files[0])
 
     # Create model object in inference mode
-#    model = modellib.MaskRCNN("inference", CocoConfig())
-#    model.load_weights(args.mrcnn_model, by_name=True)
+    # model = modellib.MaskRCNN("inference", CocoConfig())
+    # model.load_weights(args.mrcnn_model, by_name=True)
 
-#    model.detect([frame])
+    # model.detect([frame])
 
     # Create ORB detector
     orb = cv2.ORB.create(args.orb_points, 2, args.orb_octaves, 31, 0, 2, cv2.ORB_HARRIS_SCORE, 31, args.fast_threshold)
@@ -102,7 +102,7 @@ def run():
         # - run detection with MaskR-CNN on full color frame
         # r = model.detect([frame])[0]
         # - alternatively, load precomputed MaskR-CNN detections
-        r = pickle.load(bz2.open(f.split('.')[0]+'.p.bz2', 'rb'))
+        r = pickle.load(bz2.open(f.split('.')[0] + '.p.bz2', 'rb'))
         # - add frame (detections) to tracker
         t.add_frame(pts, desc, r)
         # save image representations if required with --images argument
