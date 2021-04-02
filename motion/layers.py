@@ -144,7 +144,9 @@ class HomographyLayer:
         :param points: set of points to register
         :param descriptors: descriptors used for registration
         """
-        if self.last_frame_points is not None:
+        if self.last_frame_points is None or not self.last_frame_desc.size or not descriptors.size:
+            self.homography = np.eye(3)
+        else:
             # Match points based on descriptions
             # TODO: check bruteforce matcher approach
             matches = self.matcher.match(descriptors, self.last_frame_desc)
@@ -167,6 +169,8 @@ class HomographyLayer:
             else:
                 # TODO: verify the ransac matching efficacy
                 self.homography, _ = cv2.findHomography(last_frame_matched, new_frame_matched, cv2.RANSAC)
+            if self.homography is None:
+                self.homography = np.eye(3)
 
         # Store point positions and descriptors
         self.last_frame_points = points
