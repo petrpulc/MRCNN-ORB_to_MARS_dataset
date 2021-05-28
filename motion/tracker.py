@@ -1,5 +1,6 @@
 import os
 
+import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
@@ -68,12 +69,18 @@ class Tracker:
         mask_points = {k: [] for k in range(len(detected_objects['class_ids']))}
         loose_points_idx = set()
 
+        background = np.invert(np.logical_or.reduce(detected_objects['masks'], 2))
+        eroded_masks = np.zeros(detected_objects['masks'].shape, dtype=bool)
+        for i in range(detected_objects['masks'].shape[2]):
+            rate = int(np.ceil((detected_objects['rois'][i, 2] - detected_objects['rois'][i, 0]) / 20))
+            eroded_masks[:, :, i] = cv2.erode(detected_objects['masks'][:, :, i].astype(np.uint8), np.ones((rate, rate)))
+
         for i in range(len(points)):
-            masks = np.argwhere(detected_objects['masks'][points[i, 1], points[i, 0]])
+            masks = np.argwhere(eroded_masks[points[i, 1], points[i, 0]])
             if masks.size:
                 for m in masks:
                     mask_points[m[0]].append(i)
-            else:
+            elif background[points[i, 1], points[i, 0]]:
                 loose_points_idx.add(i)
 
         # Pass only loose points (intersection with loose points)
@@ -98,7 +105,7 @@ class Tracker:
         # - mark non-person objects as used (to not be considered in matching)
         objects_to_match = [i for i in range(len(detected_objects['class_ids'])) if
                             detected_objects['class_ids'][i] == 1]
-        otm_masks = np.take(detected_objects['masks'], objects_to_match, 2)
+        otm_masks = np.take(eroded_masks, objects_to_match, 2)
         otm_rois = np.take(detected_objects['rois'], objects_to_match, 0)
 
         # - compute matching cost from matched points

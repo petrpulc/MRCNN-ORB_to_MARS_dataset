@@ -5,18 +5,17 @@ Mask R-CNN + ORB tracker entry point.
 """
 
 import argparse
+import bz2
 import glob
 import math
 import os
+import pickle
 
 import cv2
+import numpy as np
 
-import mrcnn.model as modellib
 from motion.tracker import Tracker
-from mrcnn.config import CocoConfig
-from mrcnn.utils import download_trained_weights
-from plot import plot_mrcnn, plot_image
-import pickle, bz2
+from plot import plot_image
 
 DEFAULT_COCO_MODEL = 'mask_rcnn_coco.h5'
 
@@ -30,32 +29,12 @@ def __parse_args():
     parser = argparse.ArgumentParser(description='Detect objects with Mask R-CNN and track them with ORB.')
     parser.add_argument('path', help='path to directory with frames')
     parser.add_argument('--file_mask', default='*.jpg')
-    parser.add_argument('--mrcnn_model', default=DEFAULT_COCO_MODEL,
-                        help='path to mrcnn model, default is downloaded automatically if not available')
     parser.add_argument('--output', '-o', default='result')
-    parser.add_argument('--images', action='store_true')
-    parser.add_argument('--orb_points', type=int, default=5000)
+    parser.add_argument('--orb_points', type=int, default=8000)
     parser.add_argument('--orb_scale_factor', type=int, default=2)
     parser.add_argument('--fast_threshold', type=int, default=50)
     parser.add_argument('--orb_octaves', type=int)
     return parser.parse_args()
-
-
-def __check_model(path):
-    """
-    Check if model file available, download if default is missing.
-
-    Based on: https://github.com/matterport/Mask_RCNN
-
-    :param path: path to model
-    """
-    if os.path.exists(path):
-        return
-
-    if os.path.basename(path) != DEFAULT_COCO_MODEL:
-        raise FileNotFoundError('Unknown model, please download manually...')
-
-    download_trained_weights(path)
 
 
 def run():
@@ -63,16 +42,13 @@ def run():
     Run detection and tracking.
     """
     args = __parse_args()
-    __check_model(args.mrcnn_model)
 
     # Prepare output structure
     if not os.path.exists(args.output):
         os.makedirs(args.output, exist_ok=True)
-    if args.images:
-        for sub in ('mrcnn', 'rois', 'full'):
-            full_path = os.path.join(args.output, sub)
-            if not os.path.exists(full_path):
-                os.mkdir(full_path)
+    full_path = os.path.join(args.output, 'full')
+    if not os.path.exists(full_path):
+        os.mkdir(full_path)
     obj_path = os.path.join(args.output, 'objects')
     if not os.path.exists(obj_path):
         os.mkdir(obj_path)
@@ -82,6 +58,7 @@ def run():
 
     # Get first frame to set properties
     frame = cv2.imread(files[0])
+    frame_height, frame_width = frame.shape[:2]
 
     # Create model object in inference mode
     # model = modellib.MaskRCNN("inference", CocoConfig())
@@ -109,27 +86,40 @@ def run():
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         # - detect and compute ORB PoIs with settings from `orb`
         pts, desc = orb.detectAndCompute(gray, None)
-        # - run detection with MaskR-CNN on full color frame
-        # r = model.detect([frame])[0]
-        # - alternatively, load precomputed MaskR-CNN detections
+        # - load precomputed MaskR-CNN detections
         r = pickle.load(bz2.open(f.split('.')[0] + '.p.bz2', 'rb'))
         # - add frame (detections) to tracker
         do2oid = t.add_frame(pts, desc, r)
         # save image representations if required with --images argument
-        if args.images:
-            # plot_mrcnn(gray, r, t, args.output)
-            plot_image(gray, t, args.output)
+        plot_image(gray, t, args.output)
+
+        bgra = cv2.cvtColor(frame, cv2.COLOR_RGB2BGRA)
+
         for detected_object, object_id in enumerate(do2oid):
             if object_id is None:
                 continue
-            bgra = cv2.cvtColor(frame, cv2.COLOR_RGB2BGRA)
+
             bgra[:, :, 3] = r['masks'][:, :, detected_object] * 255
 
             roi = r['rois'][detected_object]
-            size = int(max(roi[2] - roi[0], roi[3] - roi[1]) / 2)
-            centroid = (int((roi[0] + roi[2]) / 2), int((roi[1] + roi[3]) / 2))
-            patch = bgra[centroid[0] - size:centroid[0] + size, centroid[1] - size:centroid[1] + size]
-            patch = cv2.resize(patch, (50, 50), interpolation=cv2.INTER_AREA)
+            h = roi[2] - roi[0]
+            w = roi[3] - roi[1]
+            size = int(max(w, h / 2))
+
+            patch = np.zeros((size * 2, size, 4), np.uint8)
+
+            c_h, c_w = int((roi[0] + roi[2]) / 2), int((roi[1] + roi[3]) / 2)
+            pad_l = max(int(size / 2) - c_w, 0)
+            pad_t = max(size - c_h, 0)
+            pad_r = max(c_w + int(size / 2) - frame_width, 0)
+            pad_b = max(c_h + size - frame_height, 0)
+            valid_w = size - pad_l - pad_r
+            valid_h = 2 * size - pad_t - pad_b
+            img_l = max(int(c_w - size / 2), 0)
+            img_t = max(int(c_h - size), 0)
+
+            patch[pad_t:pad_t + valid_h, pad_l:pad_l + valid_w] = bgra[img_t:img_t + valid_h, img_l:img_l + valid_w]
+            patch = cv2.resize(patch, (128, 256), interpolation=cv2.INTER_AREA)
 
             path = os.path.join(obj_path, str(object_id))
             if not os.path.exists(path):
