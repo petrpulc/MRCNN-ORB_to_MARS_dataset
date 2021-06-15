@@ -5,19 +5,18 @@ Mask R-CNN + ORB tracker entry point.
 """
 
 import argparse
-import bz2
-import glob
 import math
 import os
-import pickle
 
 import cv2
 import numpy as np
 
+import mrcnn.model as modellib
 from motion.tracker import Tracker
+from mrcnn.config import CocoConfig
 from plot import plot_image
 
-DEFAULT_COCO_MODEL = 'mask_rcnn_coco.h5'
+DEFAULT_COCO_MODEL = '../mask_rcnn_coco.h5'
 
 
 def __parse_args():
@@ -31,9 +30,9 @@ def __parse_args():
     parser.add_argument('--file_mask', default='*.jpg')
     parser.add_argument('--output', '-o', default='result')
     parser.add_argument('--orb_points', type=int, default=8000)
-    parser.add_argument('--orb_scale_factor', type=int, default=2)
+    parser.add_argument('--orb_scale_factor', default=2)
     parser.add_argument('--fast_threshold', type=int, default=50)
-    parser.add_argument('--orb_octaves', type=int)
+    parser.add_argument('--orb_octaves', type=int, default=3)
     return parser.parse_args()
 
 
@@ -54,40 +53,44 @@ def run():
         os.mkdir(obj_path)
 
     # Get list of frames
-    files = list(sorted(glob.glob(os.path.join(args.path, args.file_mask))))
+    cap = cv2.VideoCapture(args.path)
 
     # Get first frame to set properties
-    frame = cv2.imread(files[0])
-    frame_height, frame_width = frame.shape[:2]
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
     # Create model object in inference mode
-    # model = modellib.MaskRCNN("inference", CocoConfig())
-    # model.load_weights(args.mrcnn_model, by_name=True)
+    model = modellib.MaskRCNN("inference", CocoConfig())
+    model.load_weights(DEFAULT_COCO_MODEL, by_name=True)
 
-    # model.detect([frame])
     # Compute number of octaves based on frame size and scale factor
     if not args.orb_octaves:
-        args.orb_octaves = max(math.ceil(math.log(frame.shape[1] / 135, args.orb_scale_factor)), 1)
+        args.orb_octaves = max(math.ceil(math.log(frame_width / 135, args.orb_scale_factor)), 1)
+
+    first_level = max(math.floor(math.log(frame_width / 1350, args.orb_scale_factor)), 0)
 
     # Create ORB detector
     orb = cv2.ORB.create(args.orb_points,
                          args.orb_scale_factor, args.orb_octaves,
-                         31, 0, 2, cv2.ORB_HARRIS_SCORE,
+                         31, first_level, 2, cv2.ORB_HARRIS_SCORE,
                          31, args.fast_threshold)
 
     # Initialize tracker
-    t = Tracker(args.orb_octaves, frame.shape[1], args.output)
+    t = Tracker(args.orb_octaves, frame_width, args.output)
 
     # Process files
-    for f in files:
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
         # - load frame, convert from BGR to RGB
-        frame = cv2.imread(f)[:, :, ::-1]
+        frame = frame[:, :, ::-1]
         # - convert to grayscale
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         # - detect and compute ORB PoIs with settings from `orb`
         pts, desc = orb.detectAndCompute(gray, None)
         # - load precomputed MaskR-CNN detections
-        r = pickle.load(bz2.open(f.split('.')[0] + '.p.bz2', 'rb'))
+        r = model.detect([frame])[0]
         # - add frame (detections) to tracker
         do2oid = t.add_frame(pts, desc, r)
         # save image representations if required with --images argument

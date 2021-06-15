@@ -31,6 +31,11 @@ assert LooseVersion(tf.__version__) >= LooseVersion("2.0")
 
 tf.compat.v1.disable_eager_execution()
 
+# memory growth
+physical_devices = tf.config.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+
 ############################################################
 #  Utility Functions
 ############################################################
